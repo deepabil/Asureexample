@@ -1,0 +1,53 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  imageName: 'sample-node-app'
+  containerGroupName: 'sample-node-app-container-group'
+
+steps:
+# Checkout the code from GitHub
+- task: Checkout@1
+
+# Log in to Azure Container Registry
+- task: AzureCLI@2
+  inputs:
+    azureSubscription: '<your-azure-subscription>'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      az acr login --name <your-acr-name>
+
+# Build the Docker image
+- script: |
+    docker build -t <your-acr-name>.azurecr.io/$(imageName):$(Build.BuildId) .
+  displayName: 'Build Docker image'
+
+# Push the Docker image to Azure Container Registry
+- script: |
+    docker push <your-acr-name>.azurecr.io/$(imageName):$(Build.BuildId)
+  displayName: 'Push Docker image to ACR'
+
+# Deploy the Docker image to Azure Container Instances
+- task: AzureCLI@2
+  inputs:
+    azureSubscription: '<your-azure-subscription>'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      az container create \
+        --resource-group <your-resource-group> \
+        --name $(containerGroupName) \
+        --image <your-acr-name>.azurecr.io/$(imageName):$(Build.BuildId) \
+        --cpu 1 \
+        --memory 1.5 \
+        --registry-login-server <your-acr-name>.azurecr.io \
+        --registry-username $(az acr credential show -n <your-acr-name> --query username --output tsv) \
+        --registry-password $(az acr credential show -n <your-acr-name> --query passwords[0].value --output tsv) \
+        --dns-name-label $(containerGroupName) \
+        --ports 80
+  displayName: 'Deploy to Azure Container Instances'
